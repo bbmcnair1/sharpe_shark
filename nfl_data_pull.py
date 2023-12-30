@@ -42,15 +42,16 @@ def pull_and_save_player_ids(save_path: str) -> None:
     raw_player_ids.to_pickle(save_path + f'raw_player_ids.pkl')
 
 
-def main():
-    save_path = '../data_dump/nfl_pbp_data/'
-    refresh_current_year = True
-    refresh_all_years = True
-
+def main(refresh_all_years: bool = False, refresh_current_year: bool = True, save_path: str = '../data_dump/nfl_pbp_data/') -> None:
     cached_seasons = check_cached_seasons(save_path)
     years = determine_years_to_pull(refresh_all_years, refresh_current_year, cached_seasons)
-    pull_and_save_pbp_data(years, save_path)
-    pull_and_save_player_ids(save_path)
+    try:
+        pull_and_save_pbp_data(years, save_path)
+        pull_and_save_player_ids(save_path)
+        print('Data pull successful.')
+    except Exception as e:
+        print(f'An error occurred while attempting to refresh data: {e}')
+        print('Using cached data instead.')
 
 
 if __name__ == '__main__':
