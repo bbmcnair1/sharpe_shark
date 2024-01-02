@@ -1,3 +1,4 @@
+from nfl_data_pull import *
 from nfl_data_check import *
 from nfl_trim_data import *
 import numpy as np
@@ -16,6 +17,8 @@ file_path = '../data_dump/nfl_pbp_data/2022.pkl'
 df = load_data(file_path)
 latest_game_id = get_latest_game_id(df)
 df_latest_game = filter_data_by_game_id(df, latest_game_id)
+player_ids = pd.read_pickle('../data_dump/nfl_pbp_data/raw_player_ids.pkl')[
+    ['gsis_id', 'name', 'merge_name', 'position', 'birthdate', 'draft_year', 'height', 'weight']]
 
 df = df_latest_game.copy()
 raw_yards = df['yards_gained'].sum()
@@ -43,7 +46,8 @@ df.to_excel('../data_dump/nfl_pbp_data/sb2022.xlsx', index=False)
 '''
 
 
-def gen_pre_game_summary(df):
+# todo: this is game-specific, need to groupby group_cols
+def gen_pre_game_summary(df: pd.DataFrame):
     columns = ['season', 'week', 'game_date', 'home_team', 'away_team', 'spread_line', 'total_line']
     pre_game = df[columns].drop_duplicates()
     pre_game['favorite'] = np.where(pre_game['spread_line'] > 0, pre_game['home_team'], pre_game['away_team'])
@@ -53,15 +57,13 @@ def gen_pre_game_summary(df):
     return pre_game
 
 
-pre_game = gen_pre_game_summary(df)
-
-
 '''
     Team-level stats
 '''
 
 
-def gen_team_level_stats(df):
+# todo: this is game-specific, need to groupby group_cols
+def gen_team_level_stats(df: pd.DataFrame):
     home_team = df['home_team'].unique()[0]
     away_team = df['away_team'].unique()[0]
     home_score = df['home_score'].unique()[0]
@@ -97,19 +99,16 @@ def gen_team_level_stats(df):
     return stats
 
 
-team_stats = gen_team_level_stats(df)
-
 '''
     Box Score
 '''
 
-# todo: add total team snaps, and snaps by player, then snap share
 
-
-def gen_box_score(df, group_cols: list = None):
+def gen_box_score(df: pd.DataFrame, group_cols: list = None):
     if group_cols is None:
-        group_cols = ['season', 'week', 'game_date', 'game_id', 'posteam']
+        group_cols = ['season', 'week', 'game_id', 'posteam', 'defteam']
     ascending_list = [True] * len(group_cols) + [False]
+
     # Passing stats
     passing_stats = df[df['pass_attempt'] == 1].groupby(group_cols+['passer_player_name'], as_index=False).agg(
         pass_attempts=('pass_attempt', 'sum'),
@@ -139,7 +138,22 @@ def gen_box_score(df, group_cols: list = None):
     return passing_stats, rushing_stats, receiving_stats
 
 
-passing_stats, rushing_stats, receiving_stats = gen_box_score(df)
+'''
+    Team & Player Snaps
+'''
+
+
+def count_player_appearances_by_game(df: pd.DataFrame, player_columns: list = None, group_cols: list = None):
+    for col in group_cols:
+        if col not in df.columns:
+            raise ValueError(f"Column {col} not found in DataFrame")
+
+    melted_df = df.melt(id_vars=group_cols, value_vars=player_columns, var_name='player_col', value_name='player_id')
+    melted_df = melted_df.dropna(subset=['player_id'])
+    grouped_df = melted_df.groupby(group_cols+['player_id']).size().reset_index(name='count')
+
+    return grouped_df
+
 
 '''
     Timeline Summaries
@@ -147,3 +161,23 @@ passing_stats, rushing_stats, receiving_stats = gen_box_score(df)
 # yards gained by team, type, player -- can do Sharpe here... ypa and std dev
 # score differential
 # win probability
+
+'''
+    Execute Functions
+'''
+group_cols = ['season', 'week', 'game_id', 'posteam', 'defteam']
+
+pre_game = gen_pre_game_summary(df)
+team_stats = gen_team_level_stats(df)
+
+passing_stats, rushing_stats, receiving_stats = gen_box_score(df, group_cols=group_cols)
+team_snaps = df.groupby(group_cols, as_index=False)['play_id'].count().rename(columns={'play_id': 'total_snaps'})
+player_snaps = count_player_appearances_by_game(df, player_columns=[f'player{i}' for i in range(1, 12)], group_cols=group_cols)
+player_snaps = player_snaps.merge(player_ids[['gsis_id', 'name']], how='inner', left_on='player_id', right_on='gsis_id').sort_values(['game_id', 'posteam', 'count'], ascending=[True, True, False])
+
+'''
+    Test Area
+'''
+
+
+
