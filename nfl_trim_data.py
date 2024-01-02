@@ -8,6 +8,15 @@ from typing import List
 '''
 
 
+def split_identifiers(df, column_name):
+    if column_name not in df.columns:
+        raise ValueError(f"Column {column_name} not found in DataFrame")
+    for i in range(1, 12):
+        df[f'player{i}'] = df[column_name].apply(lambda x: x.split(';')[i-1] if len(x.split(';')) >= i else None)
+    df.drop(column_name, axis=1, inplace=True)
+    return df
+
+
 def trim_columns(df):
     col_dict = dict()
     col_dict['all'] = df.columns.tolist()
@@ -31,7 +40,7 @@ def trim_columns(df):
                          'home_coach', 'away_coach',
                          'first_down', 'xpass', 'pass_oe',
                          'offense_formation', 'offense_personnel', 'defense_personnel',
-                         'defenders_in_box', 'offense_players', 'defense_players']
+                         'defenders_in_box', 'offense_players']
     col_dict['other'] = [col for col in col_dict['other'] if col in df.columns.tolist()]
 
     cols_to_keep = []
@@ -52,6 +61,10 @@ def trim_columns(df):
 
     df.rename(columns={'pass': 'dropback', 'rush': 'designed_run'}, inplace=True)
 
+    print('Starting Columns #: ', len(col_dict['all']))
+    cols_dropped = len(col_dict['all']) - len(df.columns.tolist())
+    print('Number of Columns Dropped: ', cols_dropped)
+
     # add some columns
     df['time_elapsed'] = df['game_seconds_remaining'].diff().fillna(0) * -1
     df['pass_completion'] = np.where(df['passer_player_name'].notnull()
@@ -59,10 +72,12 @@ def trim_columns(df):
                                      & df['dropback'] == 1, 1, 0)
     df['scramble_yards'] = df['qb_scramble'] * df['rushing_yards']
     df['designed_rushing_yards'] = df['rushing_yards'] - df['scramble_yards']
-    print('Starting Columns #: ', len(col_dict['all']))
-    print('Ending Columns #: ', len(df.columns.tolist()))
-    print('Number of Columns Dropped: ', len(col_dict['all']) - len(df.columns.tolist()))
 
+    # split out identifiers into their own columns
+    df = split_identifiers(df, 'offense_players')
+
+    print('Number of Columns Added: ', cols_dropped - (len(col_dict['all']) - len(df.columns.tolist())))
+    print('Ending Columns #: ', len(df.columns.tolist()))
     return df, col_dict
 
 
