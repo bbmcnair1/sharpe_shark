@@ -35,7 +35,7 @@ def basic_eda(df: pd.DataFrame):
     print('Number of Passes:', len(df[df['play_type_nfl'] == 'PASS']))
 
 
-def main(file_path: str = '../data_dump/nfl_pbp_data/2023.pkl') -> None:
+def main(file_path: str = '../data_dump/nfl_pbp_data/2022.pkl') -> None:
     df = load_data(file_path)
     latest_game_id = get_latest_game_id(df)
     df_latest_game = filter_data_by_game_id(df, latest_game_id)
