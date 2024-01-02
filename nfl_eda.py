@@ -102,36 +102,39 @@ team_stats = gen_team_level_stats(df)
 '''
     Box Score
 '''
-# todo: check the below function
-# todo: add snaps played, other player-level stats
+
+# todo: add total team snaps, and snaps by player, then snap share
 
 
-def gen_box_score(df):
+def gen_box_score(df, group_cols: list = None):
+    if group_cols is None:
+        group_cols = ['season', 'week', 'game_date', 'game_id', 'posteam']
+    ascending_list = [True] * len(group_cols) + [False]
     # Passing stats
-    passing_stats = df[df['pass_attempt'] == 1].groupby(['posteam', 'passer_player_name']).agg(
+    passing_stats = df[df['pass_attempt'] == 1].groupby(group_cols+['passer_player_name'], as_index=False).agg(
         pass_attempts=('pass_attempt', 'sum'),
         completions=('receiving_yards', 'count'),
         passing_yards=('passing_yards', 'sum'),
-        passing_touchdowns=('pass_touchdown', 'sum'),
+        passing_touchdowns=('pass_touchdown', 'sum')
         # Add more stats as needed
-    ).reset_index().sort_values('passing_yards', ascending=False)
+    ).sort_values(group_cols+['passing_yards'], ascending=ascending_list).reset_index(drop=True)
 
     # Rushing stats
-    rushing_stats = df[df['rush_attempt'] == 1].groupby(['posteam', 'rusher_player_name']).agg(
+    rushing_stats = df[df['rush_attempt'] == 1].groupby(group_cols+['rusher_player_name'], as_index=False).agg(
         rushing_attempts=('rush_attempt', 'sum'),
         rushing_yards=('rushing_yards', 'sum'),
-        rushing_touchdowns=('rush_touchdown', 'sum'),
+        rushing_touchdowns=('rush_touchdown', 'sum')
         # Add more stats as needed
-    ).reset_index().sort_values('rushing_yards', ascending=False)
+    ).sort_values(group_cols+['rushing_yards'], ascending=ascending_list).reset_index(drop=True)
 
     # Receiving stats
-    receiving_stats = df[df['pass_attempt'] == 1].groupby(['posteam', 'receiver_player_name']).agg(
+    receiving_stats = df[df['pass_attempt'] == 1].groupby(group_cols+['receiver_player_name'], as_index=False).agg(
         targets=('receiver_player_name', 'count'),
         catches=('receiving_yards', 'count'),
         receiving_yards=('receiving_yards', 'sum'),
-        receiving_touchdowns=('pass_touchdown', 'sum'),
+        receiving_touchdowns=('pass_touchdown', 'sum')
         # Add more stats as needed
-    ).reset_index().sort_values('receiving_yards', ascending=False)
+    ).sort_values(group_cols+['receiving_yards'], ascending=ascending_list).reset_index(drop=True)
 
     return passing_stats, rushing_stats, receiving_stats
 
