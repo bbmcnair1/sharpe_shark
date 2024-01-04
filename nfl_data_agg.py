@@ -1,3 +1,4 @@
+import pandas as pd
 from nfl_data_pull import *
 from nfl_data_check import *
 from nfl_trim_data import *
@@ -12,30 +13,31 @@ pio.renderers.default = 'browser'
     - summarizes game details
 ============================================================== '''
 
-# todo: for now this pulls just the most recent game played, will want to update EDA to at least one team or full season
-file_path = '../data_dump/nfl_pbp_data/2022.pkl'
-df = load_data(file_path)
-latest_game_id = get_latest_game_id(df)
-df_latest_game = filter_data_by_game_id(df, latest_game_id)
-player_ids = pd.read_pickle('../data_dump/nfl_pbp_data/raw_player_ids.pkl')[
-    ['gsis_id', 'name', 'merge_name', 'position', 'birthdate', 'draft_year', 'height', 'weight']]
 
-df = df_latest_game.copy()
-raw_yards = df['yards_gained'].sum()
-df.sort_values(['game_date', 'game_id', 'play_id'], ascending=[True, True, True], inplace=True)
-df.reset_index(drop=True, inplace=True)
+def clean_raw_data(df: pd.DataFrame) -> (pd.DataFrame, pd.DataFrame, dict):
+    raw_yards = df['yards_gained'].sum()
+    print('Raw Yards: ', raw_yards)
 
-# trim columns and rows
-df, col_dict = trim_columns(df)
-df, df_row_drop = trim_rows(df, play_type_filter=['pass', 'run', 'qb_kneel'])
+    df.sort_values(['game_date', 'game_id', 'play_id'], ascending=[True, True, True], inplace=True)
+    df.reset_index(drop=True, inplace=True)
 
-print('game minutes captured: ', round(df['time_elapsed'].sum() / 60, 1))
-yards_captured = df['yards_gained'].sum()
-print('share of raw yards captured: ', round(yards_captured / raw_yards * 100, 1))
+    # trim columns and rows
+    df, col_dict = trim_columns(df)
 
-# export df to .csv in file path
-df.to_csv('../data_dump/nfl_pbp_data/sb2022.csv', index=False)
-df.to_excel('../data_dump/nfl_pbp_data/sb2022.xlsx', index=False)
+    raw_minutes = round(df['time_elapsed'].sum() / 60, 1)
+    print('Raw Minutes: ', raw_minutes)
+
+    df, df_row_drop = trim_rows(df, play_type_filter=['pass', 'run', 'qb_kneel'])
+
+    print('Game Minutes Captured: ', round(df['time_elapsed'].sum() / 60, 1))
+    yards_captured = df['yards_gained'].sum()
+    print('Yards Captured: ', yards_captured)
+    print('Share of Raw Yards Captured: ', round(yards_captured / raw_yards * 100, 1))
+    minutes_captured = round(df['time_elapsed'].sum() / 60, 1)
+    print('Minutes Captured: ', minutes_captured)
+    print('Share of Raw Minutes Captured: ', round(minutes_captured / raw_minutes * 100, 1))
+    return df, df_row_drop, col_dict
+
 
 ''' ==============================================================
     Game Details
@@ -46,14 +48,15 @@ df.to_excel('../data_dump/nfl_pbp_data/sb2022.xlsx', index=False)
 '''
 
 
-# todo: this is game-specific, need to groupby group_cols
-def gen_pre_game_summary(df: pd.DataFrame):
-    columns = ['season', 'week', 'game_date', 'home_team', 'away_team', 'spread_line', 'total_line']
+def gen_pre_game_summary(df: pd.DataFrame, group_cols: list = None) -> pd.DataFrame:
+    if group_cols is None:
+        group_cols = ['season', 'week', 'game_id', 'home_team', 'away_team']
+    columns = ['season', 'week', 'game_id', 'home_team', 'home_coach', 'away_team', 'away_coach', 'spread_line', 'total_line']
     pre_game = df[columns].drop_duplicates()
+    # todo: confirm the below is correct
     pre_game['favorite'] = np.where(pre_game['spread_line'] > 0, pre_game['home_team'], pre_game['away_team'])
     pre_game['underdog'] = np.where(pre_game['spread_line'] > 0, pre_game['away_team'], pre_game['home_team'])
-    pre_game = pre_game.T
-    pre_game.columns = ['game_details']
+    pre_game.set_index(group_cols, inplace=True)
     return pre_game
 
 
@@ -63,13 +66,10 @@ def gen_pre_game_summary(df: pd.DataFrame):
 
 
 # todo: this is game-specific, need to groupby group_cols
-def gen_team_level_stats(df: pd.DataFrame):
-    home_team = df['home_team'].unique()[0]
-    away_team = df['away_team'].unique()[0]
-    home_score = df['home_score'].unique()[0]
-    away_score = df['away_score'].unique()[0]
-    stats = df.groupby('posteam').agg(
-        total_points=('posteam_score_post', 'max'),
+def gen_team_level_stats(df: pd.DataFrame, group_cols: list = None) -> pd.DataFrame:
+    if group_cols is None:
+        group_cols = ['season', 'week', 'game_id', 'posteam', 'defteam']
+    stats = df.groupby(group_cols).agg(
         total_plays=('play_id', 'count'),
         total_yards=('yards_gained', 'sum'),
         time_of_possession=('time_elapsed', 'sum'),
@@ -85,17 +85,13 @@ def gen_team_level_stats(df: pd.DataFrame):
         designed_rushing_yards=('designed_rushing_yards', 'sum'),
         rush_touchdowns=('rush_touchdown', 'sum')
     ).reset_index()
+
     stats['yards_per_play'] = stats['total_yards'] / stats['total_plays']
     stats['yards_per_attempt'] = stats['pass_yards'] / stats['pass_attempts']
     stats['completion_rate'] = stats['pass_completions'] / stats['pass_attempts']
     stats['yards_per_rush'] = stats['designed_rushing_yards'] / stats['designed_runs']
 
-    # update total_points for home and away teams mapping to posteam
-    stats.loc[stats['posteam'] == home_team, 'total_points'] = home_score
-    stats.loc[stats['posteam'] == away_team, 'total_points'] = away_score
-
-    # transpose and rename columns
-    stats = stats.set_index('posteam').T
+    stats = stats.set_index(group_cols)
     return stats
 
 
@@ -104,7 +100,7 @@ def gen_team_level_stats(df: pd.DataFrame):
 '''
 
 
-def gen_box_score(df: pd.DataFrame, group_cols: list = None):
+def gen_box_score(df: pd.DataFrame, group_cols: list = None) -> pd.DataFrame:
     if group_cols is None:
         group_cols = ['season', 'week', 'game_id', 'posteam', 'defteam']
     ascending_list = [True] * len(group_cols) + [False]
@@ -143,7 +139,7 @@ def gen_box_score(df: pd.DataFrame, group_cols: list = None):
 '''
 
 
-def count_player_appearances_by_game(df: pd.DataFrame, player_columns: list = None, group_cols: list = None):
+def count_player_appearances_by_game(df: pd.DataFrame, player_columns: list = None, group_cols: list = None) -> pd.DataFrame:
     for col in group_cols:
         if col not in df.columns:
             raise ValueError(f"Column {col} not found in DataFrame")
@@ -165,14 +161,26 @@ def count_player_appearances_by_game(df: pd.DataFrame, player_columns: list = No
 '''
     Execute Functions
 '''
+
+file_path = '../data_dump/nfl_pbp_data/2023.pkl'
+df = load_data(file_path)
+player_ids = pd.read_pickle('../data_dump/nfl_pbp_data/raw_player_ids.pkl')[
+    ['gsis_id', 'name', 'merge_name', 'position', 'birthdate', 'draft_year', 'height', 'weight']]
+# latest_game_id = get_latest_game_id(df)
+# df_latest_game = filter_data_by_game_id(df, latest_game_id)
+df, df_row_drop, col_dict = clean_raw_data(df)
+df_row_drop_yards = df_row_drop[~df_row_drop['yards_gained'].isna()]
+
 group_cols = ['season', 'week', 'game_id', 'posteam', 'defteam']
 
-pre_game = gen_pre_game_summary(df)
-team_stats = gen_team_level_stats(df)
+# todo: make sure all the indices are aligned as group_cols
 
-passing_stats, rushing_stats, receiving_stats = gen_box_score(df, group_cols=group_cols)
+pre_game = gen_pre_game_summary(df=df)
+team_stats = gen_team_level_stats(df=df, group_cols=group_cols)
+
+passing_stats, rushing_stats, receiving_stats = gen_box_score(df=df, group_cols=group_cols)
 team_snaps = df.groupby(group_cols, as_index=False)['play_id'].count().rename(columns={'play_id': 'total_snaps'})
-player_snaps = count_player_appearances_by_game(df, player_columns=[f'player{i}' for i in range(1, 12)], group_cols=group_cols)
+player_snaps = count_player_appearances_by_game(df=df, player_columns=[f'player{i}' for i in range(1, 12)], group_cols=group_cols)
 player_snaps = player_snaps.merge(player_ids[['gsis_id', 'name']], how='inner', left_on='player_id', right_on='gsis_id').sort_values(['game_id', 'posteam', 'count'], ascending=[True, True, False])
 
 '''

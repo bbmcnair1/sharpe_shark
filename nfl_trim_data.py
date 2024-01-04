@@ -11,6 +11,7 @@ from typing import List
 def split_identifiers(df, column_name):
     if column_name not in df.columns:
         raise ValueError(f"Column {column_name} not found in DataFrame")
+    df[column_name] = df[column_name].astype(str)
     for i in range(1, 12):
         df[f'player{i}'] = df[column_name].apply(lambda x: x.split(';')[i-1] if len(x.split(';')) >= i else None)
     df.drop(column_name, axis=1, inplace=True)
@@ -44,7 +45,7 @@ def trim_columns(df):
     col_dict['other'] = [col for col in col_dict['other'] if col in df.columns.tolist()]
 
     cols_to_keep = []
-    for key in ['game', 'time', 'play', 'player', 'play_type', 'touchdown', 'formation', 'wp', 'vegas', 'score', 'other']:
+    for key in col_dict.keys():
         if key != 'all':
             cols_to_keep += col_dict[key]
 
@@ -66,7 +67,7 @@ def trim_columns(df):
     print('Number of Columns Dropped: ', cols_dropped)
 
     # add some columns
-    df['time_elapsed'] = df['game_seconds_remaining'].diff().fillna(0) * -1
+    df['time_elapsed'] = df.groupby('game_id')['game_seconds_remaining'].diff().fillna(0) * -1
     df['pass_completion'] = np.where(df['passer_player_name'].notnull()
                                      & df['receiving_yards'].notnull()
                                      & df['dropback'] == 1, 1, 0)
@@ -92,21 +93,22 @@ def trim_rows(df, play_type_filter: List[str] = None):
     print('\nStarting Rows #:', len(df))
     df_row_drop = pd.DataFrame(columns=df.columns)
 
-    # drop some null values
-    for col in ['posteam', 'posteam_type', 'defteam', 'side_of_field', 'down']:
-        if col in df.columns.tolist():
-            dropped_rows = df[df[col].isnull()]
-            df_row_drop = pd.concat([df_row_drop, dropped_rows], ignore_index=True)
-            df = df[df[col].notnull()].copy()
-
     # only keep specific play types
     if play_type_filter is not None:
         dropped_rows = df[~df['play_type'].isin(play_type_filter)]
         df_row_drop = pd.concat([df_row_drop, dropped_rows], ignore_index=True)
         df = df[df['play_type'].isin(play_type_filter)].copy()
 
+    # drop some null values
+    for col in ['posteam', 'defteam']:
+        if col in df.columns.tolist():
+            dropped_rows = df[df[col].isnull()]
+            df_row_drop = pd.concat([df_row_drop, dropped_rows], ignore_index=True)
+            df = df[df[col].notnull()].copy()
+
     df.reset_index(drop=True, inplace=True)
     print('Ending Rows #:', len(df))
     print('Number of Rows Dropped: ', len(df_row_drop))
+    print('Number of Yards Dropped: ', df_row_drop['yards_gained'].abs().sum())
 
     return df, df_row_drop
