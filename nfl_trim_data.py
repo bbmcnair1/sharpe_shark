@@ -57,14 +57,8 @@ def trim_columns(df):
                 cols_to_keep.pop(col_index)
 
     cols_to_keep = [col for col in cols_to_keep if col in df.columns.tolist()]
-
     df = df.loc[:, cols_to_keep].copy()
-
     df.rename(columns={'pass': 'dropback', 'rush': 'designed_run'}, inplace=True)
-
-    print('Starting Columns #: ', len(col_dict['all']))
-    cols_dropped = len(col_dict['all']) - len(df.columns.tolist())
-    print('Number of Columns Dropped: ', cols_dropped)
 
     # add some columns
     df['time_elapsed'] = df.groupby('game_id')['game_seconds_remaining'].diff().fillna(0) * -1
@@ -74,11 +68,9 @@ def trim_columns(df):
     df['scramble_yards'] = df['qb_scramble'] * df['rushing_yards']
     df['designed_rushing_yards'] = df['rushing_yards'] - df['scramble_yards']
 
-    # split out identifiers into their own columns
+    # split out player identifiers into their own 11 separate columns
     df = split_identifiers(df, 'offense_players')
 
-    print('Number of Columns Added: ', cols_dropped - (len(col_dict['all']) - len(df.columns.tolist())))
-    print('Ending Columns #: ', len(df.columns.tolist()))
     return df, col_dict
 
 
@@ -90,7 +82,6 @@ def trim_columns(df):
 
 
 def trim_rows(df, play_type_filter: List[str] = None):
-    print('\nStarting Rows #:', len(df))
     df_row_drop = pd.DataFrame(columns=df.columns)
 
     # only keep specific play types
@@ -107,8 +98,5 @@ def trim_rows(df, play_type_filter: List[str] = None):
             df = df[df[col].notnull()].copy()
 
     df.reset_index(drop=True, inplace=True)
-    print('Ending Rows #:', len(df))
-    print('Number of Rows Dropped: ', len(df_row_drop))
-    print('Number of Yards Dropped: ', df_row_drop['yards_gained'].abs().sum())
 
     return df, df_row_drop

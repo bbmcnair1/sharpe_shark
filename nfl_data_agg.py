@@ -16,25 +16,17 @@ pio.renderers.default = 'browser'
 
 def clean_raw_data(df: pd.DataFrame) -> (pd.DataFrame, pd.DataFrame, dict):
     raw_yards = df['yards_gained'].sum()
-    print('Raw Yards: ', raw_yards)
-
     df.sort_values(['game_date', 'game_id', 'play_id'], ascending=[True, True, True], inplace=True)
     df.reset_index(drop=True, inplace=True)
 
     # trim columns and rows
     df, col_dict = trim_columns(df)
-
     raw_minutes = round(df['time_elapsed'].sum() / 60, 1)
-    print('Raw Minutes: ', raw_minutes)
-
     df, df_row_drop = trim_rows(df, play_type_filter=['pass', 'run', 'qb_kneel'])
 
-    print('Game Minutes Captured: ', round(df['time_elapsed'].sum() / 60, 1))
     yards_captured = df['yards_gained'].sum()
-    print('Yards Captured: ', yards_captured)
-    print('Share of Raw Yards Captured: ', round(yards_captured / raw_yards * 100, 1))
     minutes_captured = round(df['time_elapsed'].sum() / 60, 1)
-    print('Minutes Captured: ', minutes_captured)
+    print('Share of Raw Yards Captured: ', round(yards_captured / raw_yards * 100, 1))
     print('Share of Raw Minutes Captured: ', round(minutes_captured / raw_minutes * 100, 1))
     return df, df_row_drop, col_dict
 
@@ -100,13 +92,13 @@ def gen_team_level_stats(df: pd.DataFrame, group_cols: list = None) -> pd.DataFr
 '''
 
 
-def gen_box_score(df: pd.DataFrame, group_cols: list = None) -> pd.DataFrame:
+def gen_box_score(df: pd.DataFrame, group_cols: list = None) -> (pd.DataFrame, pd.DataFrame, pd.DataFrame):
     if group_cols is None:
         group_cols = ['season', 'week', 'game_id', 'posteam', 'defteam']
     ascending_list = [True] * len(group_cols) + [False]
 
     # Passing stats
-    passing_stats = df[df['pass_attempt'] == 1].groupby(group_cols+['passer_player_name'], as_index=False).agg(
+    sp = df[df['pass_attempt'] == 1].groupby(group_cols+['passer_player_name'], as_index=False).agg(
         pass_attempts=('pass_attempt', 'sum'),
         completions=('receiving_yards', 'count'),
         passing_yards=('passing_yards', 'sum'),
@@ -115,7 +107,7 @@ def gen_box_score(df: pd.DataFrame, group_cols: list = None) -> pd.DataFrame:
     ).sort_values(group_cols+['passing_yards'], ascending=ascending_list).reset_index(drop=True)
 
     # Rushing stats
-    rushing_stats = df[df['rush_attempt'] == 1].groupby(group_cols+['rusher_player_name'], as_index=False).agg(
+    sru = df[df['rush_attempt'] == 1].groupby(group_cols+['rusher_player_name'], as_index=False).agg(
         rushing_attempts=('rush_attempt', 'sum'),
         rushing_yards=('rushing_yards', 'sum'),
         rushing_touchdowns=('rush_touchdown', 'sum')
@@ -123,7 +115,7 @@ def gen_box_score(df: pd.DataFrame, group_cols: list = None) -> pd.DataFrame:
     ).sort_values(group_cols+['rushing_yards'], ascending=ascending_list).reset_index(drop=True)
 
     # Receiving stats
-    receiving_stats = df[df['pass_attempt'] == 1].groupby(group_cols+['receiver_player_name'], as_index=False).agg(
+    sre = df[df['pass_attempt'] == 1].groupby(group_cols+['receiver_player_name'], as_index=False).agg(
         targets=('receiver_player_name', 'count'),
         catches=('receiving_yards', 'count'),
         receiving_yards=('receiving_yards', 'sum'),
@@ -131,7 +123,7 @@ def gen_box_score(df: pd.DataFrame, group_cols: list = None) -> pd.DataFrame:
         # Add more stats as needed
     ).sort_values(group_cols+['receiving_yards'], ascending=ascending_list).reset_index(drop=True)
 
-    return passing_stats, rushing_stats, receiving_stats
+    return sp, sru, sre
 
 
 '''
@@ -186,6 +178,3 @@ player_snaps = player_snaps.merge(player_ids[['gsis_id', 'name']], how='inner', 
 '''
     Test Area
 '''
-
-
-
